@@ -17,3 +17,11 @@ wheels/
 .env
 .env.*
 !.env.example
+
+# models
+*.pkl
+*.joblib
+
+# data files
+*.csv
+*.tsv

@@ -4,4 +4,10 @@ version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.13"
-dependencies = []
+dependencies = [
+    "fastapi>=0.116.1",
+    "joblib>=1.5.1",
+    "prophet>=1.1.7",
+    "scikit-learn>=1.7.1",
+    "uvicorn>=0.35.0",
+]
