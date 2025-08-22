@@ -8,7 +8,7 @@ from src.use_cases.predict_forecast_use_case import PredictForecastUseCase
 router = APIRouter()
 
 @router.post("/train/{app_id}", response_model=TrainResponse, status_code=status.HTTP_200_OK)
-async def train_model(app_id: str, request: TrainRequest):
+async def train_model(app_id: str, request: TrainRequest, csv_local: str = ''):
     """
     Treina um modelo de previsão para uma aplicação específica.
 
@@ -17,7 +17,7 @@ async def train_model(app_id: str, request: TrainRequest):
     """
     try:
         use_case = TrainModelUseCase()
-        response = use_case.execute(app_id=app_id, series_data=request.series_data)
+        response = use_case.execute(app_id=app_id, series_data=request.series_data, csv_local=csv_local)
         return response
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))

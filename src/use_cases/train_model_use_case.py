@@ -4,10 +4,11 @@ import pandas as pd
 from src.domain.models import TimeSeriesData, TrainResponse
 from src.infrastructure.forecasting_models.prophet_model import ProphetModel
 from src.infrastructure.persistence.model_repository import save_model
+from src.infrastructure.persistence.data_persistance import load_csv
 from typing import List
 
 class TrainModelUseCase:
-    def execute(self, app_id: str, series_data: List[TimeSeriesData]) -> TrainResponse:
+    def execute(self, app_id: str, series_data: List[TimeSeriesData], csv_local: str = '') -> TrainResponse:
         """
         Executa o caso de uso de treinamento de um modelo Prophet.
 
@@ -18,17 +19,17 @@ class TrainModelUseCase:
         Returns:
             TrainResponse: Resposta contendo mensagem de sucesso, ID do modelo e versão.
         """
-        if not series_data:
+        if not series_data and not csv_local:
             raise ValueError("Os dados da série temporal para treino não podem ser vazios.")
-
-        # Converter os dados de entrada para um pandas Series
-        timestamps = [item.timestamp for item in series_data]
-        values = [item.value for item in series_data]
-        
-        try:
+        if csv_local:
+            # Carregar os dados do CSV local
+            df = load_csv(csv_local)
+            series = pd.Series(df['value'].values, index=df['timestamp'])
+        elif series_data:
+            # Converter os dados de entrada para um pandas Series
+            timestamps = [item.timestamp for item in series_data]
+            values = [item.value for item in series_data]
             series = pd.Series(values, index=pd.to_datetime(timestamps))
-        except Exception as e:
-            raise ValueError(f"Erro ao parsear timestamps: {e}. Verifique o formato.")
 
         # Instanciar e treinar o modelo Prophet
         prophet_model = ProphetModel()
