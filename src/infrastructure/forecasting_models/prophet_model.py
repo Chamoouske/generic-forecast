@@ -2,6 +2,8 @@
 
 import pandas as pd
 from prophet import Prophet
+from sklearn.metrics import mean_squared_error, mean_absolute_error
+import numpy as np
 
 class ProphetModel:
     def __init__(self):
@@ -74,6 +76,42 @@ class ProphetModel:
 
         # Retornar como um pandas Series com o timestamp como índice
         return pd.Series(future_forecast['yhat'].values, index=future_forecast['ds'])
+
+    def evaluate(self, series: pd.Series) -> dict:
+        """
+        Avalia o desempenho do modelo Prophet em uma série temporal histórica.
+        Calcula RMSE e MAE.
+        Args:
+            series (pd.Series): A série temporal histórica (índice de tempo, valores)
+                                para avaliação. O índice deve ser de tipo datetime.
+        Returns:
+            dict: Um dicionário contendo as métricas de avaliação (RMSE, MAE).
+        """
+        if self.model is None:
+            raise RuntimeError("O modelo Prophet não foi treinado. Chame .train() primeiro.")
+        if series.empty:
+            raise ValueError("A série temporal para avaliação não pode ser vazia.")
+
+        df_eval = series.reset_index()
+        df_eval.columns = ['ds', 'y']
+        df_eval['ds'] = pd.to_datetime(df_eval['ds'])
+
+        # Fazer previsões para as datas na série de avaliação
+        forecast = self.model.predict(df_eval)
+
+        # Juntar os valores reais com as previsões
+        results = pd.merge(df_eval, forecast[['ds', 'yhat']], on='ds', how='inner')
+
+        if results.empty:
+            raise ValueError("Não há pontos de dados em comum entre a série de avaliação e as previsões do modelo.")
+
+        y_true = results['y'].values
+        y_pred = results['yhat'].values
+
+        rmse = np.sqrt(mean_squared_error(y_true, y_pred))
+        mae = mean_absolute_error(y_true, y_pred)
+
+        return {"rmse": rmse, "mae": mae}
 
 if __name__ == "__main__":
     # Exemplo de uso

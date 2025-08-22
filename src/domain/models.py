@@ -13,7 +13,8 @@ class TrainRequest(BaseModel):
 class TrainResponse(BaseModel):
     message: str
     model_id: str
-    version: str = "v1"
+    model_version: str | None = None
+    metrics: dict | None = None
 
 class PredictRequest(BaseModel):
     series_data: List[TimeSeriesData] = Field(..., description="Dados históricos da série temporal para previsão (timestamp e valor).")
@@ -23,4 +24,4 @@ class PredictResponse(BaseModel):
     forecast: Dict[str, float]
     model_used: str = "Prophet"
     model_id: str
-    version: str = "v1"
+    model_version: str | None = None

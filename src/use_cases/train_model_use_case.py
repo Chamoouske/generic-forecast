@@ -3,7 +3,7 @@
 import pandas as pd
 from src.domain.models import TimeSeriesData, TrainResponse
 from src.infrastructure.forecasting_models.prophet_model import ProphetModel
-from src.infrastructure.persistence.model_repository import save_model
+from src.infrastructure.persistence.model_repository import save_model, load_production_model_info, update_production_model_info
 from src.infrastructure.persistence.data_persistance import load_csv
 from typing import List
 
@@ -35,12 +35,44 @@ class TrainModelUseCase:
         prophet_model = ProphetModel()
         prophet_model.train(series)
 
-        # Salvar o modelo treinado
-        saved_path = save_model(prophet_model, app_id)
+        # Avaliar o novo modelo treinado
+        new_model_metrics = prophet_model.evaluate(series)
+
+        # Carregar informações do modelo em produção
+        production_model_info = load_production_model_info(app_id)
+
+        promote_new_model = False
+        promotion_reason = ""
+        saved_path = ""
+        model_version = ""
+
+        if production_model_info is None:
+            promote_new_model = True
+            promotion_reason = "Não há modelo em produção. Novo modelo promovido."
+        else:
+            current_production_rmse = production_model_info["metrics"]["rmse"]
+            new_model_rmse = new_model_metrics["rmse"]
+
+            if new_model_rmse < current_production_rmse:
+                promote_new_model = True
+                promotion_reason = f"Métricas do novo modelo ({new_model_rmse:.2f} RMSE) são melhores que o modelo em produção ({current_production_rmse:.2f} RMSE)."
+            else:
+                promotion_reason = f"Métricas do novo modelo ({new_model_rmse:.2f} RMSE) não são melhores que o modelo em produção ({current_production_rmse:.2f} RMSE)."
+
+        if promote_new_model:
+            # Salvar o novo modelo e promovê-lo para produção
+            model_version, saved_path = save_model(prophet_model, app_id, new_model_metrics)
+            update_production_model_info(app_id, model_version, saved_path, new_model_metrics)
+            message = f"Modelo {app_id} treinado e PROMOVIDO para produção (versão: {model_version}). {promotion_reason}"
+        else:
+            # O modelo foi treinado, mas não promovido
+            message = f"Modelo {app_id} treinado, mas NÃO PROMOVIDO para produção. {promotion_reason}"
 
         return TrainResponse(
-            message=f"Modelo {app_id} treinado e salvo com sucesso em {saved_path}",
-            model_id=app_id
+            message=message,
+            model_id=app_id,
+            model_version=model_version if promote_new_model else None, # Retorna a versão apenas se promovido
+            metrics=new_model_metrics
         )
 
 if __name__ == "__main__":

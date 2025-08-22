@@ -2,7 +2,7 @@
 
 import pandas as pd
 from src.domain.models import TimeSeriesData, PredictResponse
-from src.infrastructure.persistence.model_repository import load_model
+from src.infrastructure.persistence.model_repository import load_model, load_production_model_info
 from typing import List, Dict
 
 class PredictForecastUseCase:
@@ -23,16 +23,21 @@ class PredictForecastUseCase:
 
         # Carregar o modelo treinado
         try:
-            prophet_model = load_model(app_id)
+            production_model_info = load_production_model_info(app_id)
+            if production_model_info is None:
+                raise ValueError(f"Nenhum modelo em produção encontrado para app_id '{app_id}'. Treine e promova um modelo primeiro.")
+            
+            prophet_model = load_model(app_id, production_model_info["version"])
+            model_version_used = production_model_info["version"]
         except FileNotFoundError:
-            raise ValueError(f"Modelo para app_id '{app_id}' não encontrado. Treine o modelo primeiro.")
+            raise ValueError(f"Modelo para app_id '{app_id}' e versão '{production_model_info["version"]}' não encontrado. Treine o modelo primeiro.")
         
         # Converter os dados de entrada para um pandas Series
         timestamps = [item.timestamp for item in series_data]
         values = [item.value for item in series_data]
         
         try:
-            series = pd.Series(values, index=pd.to_datetime(timestamps))
+            series = pd.Series(values, index=pd.to_datetime(timestamps, format="%d/%m/%Y %H:%M:%S"))
         except Exception as e:
             raise ValueError(f"Erro ao parsear timestamps: {e}. Verifique o formato.")
 
@@ -48,7 +53,8 @@ class PredictForecastUseCase:
 
         return PredictResponse(
             forecast=forecast_dict,
-            model_id=app_id
+            model_id=app_id,
+            model_version=model_version_used
         )
 
 if __name__ == "__main__":

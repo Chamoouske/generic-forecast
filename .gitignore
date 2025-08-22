@@ -25,3 +25,5 @@ wheels/
 # data files
 *.csv
 *.tsv
+*.json
+*.xlsx
