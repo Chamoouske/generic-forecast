@@ -1,14 +1,23 @@
 # src/domain/models.py
-
 from pydantic import BaseModel, Field
 from typing import List, Dict
 
-class TimeSeriesData(BaseModel):
-    timestamp: str
-    value: float
+class ForecastInputData(BaseModel):
+    DIA: str
+    HORA: str
+    DIA_DA_SEMANA: str
+    Rascunho: int
+    Aguardando_Pagamento: int
+    A_Transmitir: int
+    Em_Processamento: int
+    Autorizada: int
+    Denegada: int
+    Cancelada: int
+    Rejeitada: int
+    Erro_Schema: int
 
 class TrainRequest(BaseModel):
-    series_data: List[TimeSeriesData] = Field(..., description="Dados históricos da série temporal para treino (timestamp e valor).")
+    series_data: List[ForecastInputData] = Field(..., description="Dados históricos para treino no formato de colunas.")
 
 class TrainResponse(BaseModel):
     message: str
@@ -17,7 +26,7 @@ class TrainResponse(BaseModel):
     metrics: dict | None = None
 
 class PredictRequest(BaseModel):
-    series_data: List[TimeSeriesData] = Field(..., description="Dados históricos da série temporal para previsão (timestamp e valor).")
+    series_data: List[ForecastInputData] = Field(..., description="Dados históricos para previsão no formato de colunas.")
     n_predict_steps: int = Field(..., gt=0, description="Número de passos futuros para prever.")
 
 class PredictResponse(BaseModel):

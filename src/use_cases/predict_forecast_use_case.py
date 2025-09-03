@@ -1,48 +1,66 @@
 # src/use_cases/predict_forecast_use_case.py
 
 import pandas as pd
-from src.domain.models import TimeSeriesData, PredictResponse
+from src.domain.models import ForecastInputData, PredictResponse
 from src.infrastructure.persistence.model_repository import load_model, load_production_model_info
-from typing import List, Dict
+from typing import List
 
 class PredictForecastUseCase:
-    def execute(self, app_id: str, series_data: List[TimeSeriesData], n_predict_steps: int) -> PredictResponse:
+    def execute(self, app_id: str, series_data: List[ForecastInputData], n_predict_steps: int, target_column: str) -> PredictResponse:
         """
-        Executa o caso de uso de previsão de uma série temporal.
+        Executa o caso de uso de previsão de uma série temporal com base em dados tabulares.
 
         Args:
             app_id (str): O ID da aplicação para o qual o modelo foi treinado.
-            series_data (List[TimeSeriesData]): Dados históricos da série temporal para previsão.
+            series_data (List[ForecastInputData]): Dados históricos no formato de colunas.
             n_predict_steps (int): Número de passos futuros para prever.
+            target_column (str): A coluna alvo para a previsão (ex: 'Autorizada').
 
         Returns:
-            PredictResponse: Resposta contendo a previsão, o modelo usado, ID do modelo e versão.
+            PredictResponse: Resposta contendo a previsão.
         """
         if not series_data:
             raise ValueError("Os dados da série temporal para previsão não podem ser vazios.")
 
+        # Converter Pydantic models para um DataFrame do Pandas
+        df = pd.DataFrame([item.model_dump() for item in series_data])
+
+        # Validar se a coluna alvo existe no DataFrame
+        if target_column not in df.columns:
+            raise ValueError(f"A coluna alvo '{target_column}' não foi encontrada nos dados de entrada.")
+
+        # Pré-processamento dos dados
+        try:
+            # Combinar DIA e HORA para criar o timestamp 'ds'
+            df['ds'] = pd.to_datetime(df['DIA'] + ' ' + df['HORA'], format='%d/%m/%Y %H')
+        except Exception as e:
+            raise ValueError(f"Erro ao parsear 'DIA' e 'HORA': {e}. Verifique o formato.")
+
+        # Renomear a coluna alvo para 'y'
+        df.rename(columns={target_column: 'y'}, inplace=True)
+
+        # Manter apenas as colunas que o Prophet utiliza ('ds', 'y')
+        df_prophet = df[['ds', 'y']]
+
+        # O ID do modelo agora inclui a coluna alvo para garantir que o modelo correto seja carregado
+        model_id = f"{app_id}_{target_column}"
+
         # Carregar o modelo treinado
         try:
-            production_model_info = load_production_model_info(app_id)
+            production_model_info = load_production_model_info(model_id)
             if production_model_info is None:
-                raise ValueError(f"Nenhum modelo em produção encontrado para app_id '{app_id}'. Treine e promova um modelo primeiro.")
+                raise ValueError(f"Nenhum modelo em produção encontrado para '{model_id}'. Treine e promova um modelo primeiro.")
             
-            prophet_model = load_model(app_id, production_model_info["version"])
+            prophet_model = load_model(model_id, production_model_info["version"])
             model_version_used = production_model_info["version"]
         except FileNotFoundError:
-            raise ValueError(f"Modelo para app_id '{app_id}' e versão '{production_model_info["version"]}' não encontrado. Treine o modelo primeiro.")
-        
-        # Converter os dados de entrada para um pandas Series
-        timestamps = [item.timestamp for item in series_data]
-        values = [item.value for item in series_data]
-        
-        try:
-            series = pd.Series(values, index=pd.to_datetime(timestamps, format="%d/%m/%Y %H:%M:%S"))
-        except Exception as e:
-            raise ValueError(f"Erro ao parsear timestamps: {e}. Verifique o formato.")
+            raise ValueError(f"Modelo para '{model_id}' e versão '{production_model_info['version']}' não encontrado.")
 
-        print("Previsão iniciada para app_id:", app_id)
+        print(f"Previsão iniciada para app_id: {app_id}, target: {target_column}")
+        
         # Realizar a previsão
+        # O método predict do ProphetModel espera uma série, então vamos converter o dataframe
+        series = df_prophet.set_index('ds')['y']
         forecast_series = prophet_model.predict(
             series=series,
             n_predict=n_predict_steps
@@ -53,7 +71,7 @@ class PredictForecastUseCase:
 
         return PredictResponse(
             forecast=forecast_dict,
-            model_id=app_id,
+            model_id=model_id,
             model_version=model_version_used
         )
 

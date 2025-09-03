@@ -10,4 +10,5 @@ dependencies = [
     "prophet>=1.1.7",
     "scikit-learn>=1.7.1",
     "uvicorn>=0.35.0",
+    "python-multipart>=0.0.9",
 ]
