@@ -4,6 +4,8 @@ import pandas as pd
 from prophet import Prophet
 from sklearn.metrics import mean_squared_error, mean_absolute_error
 import numpy as np
+import holidays
+from datetime import date
 
 class ProphetModel:
     def __init__(self):
@@ -11,10 +13,8 @@ class ProphetModel:
 
     def train(self, series: pd.Series):
         """
-        Treina o modelo Prophet com a série temporal fornecida.
-        Args:
-            series (pd.Series): A série temporal histórica (índice de tempo, valores).
-                                O índice deve ser de tipo datetime.
+        Treina o modelo Prophet com a série temporal fornecida, incluindo feriados brasileiros
+        e sazonalidade multiplicativa.
         """
         if series.empty:
             raise ValueError("A série temporal para treino não pode ser vazia.")
@@ -23,7 +23,22 @@ class ProphetModel:
         df.columns = ['ds', 'y']
         df['ds'] = pd.to_datetime(df['ds'])
 
-        self.model = Prophet()
+        # --- MELHORIA: Adicionar feriados brasileiros ---
+        # Gera feriados para o período dos dados, com uma margem para o futuro.
+        start_year = df['ds'].min().year
+        end_year = date.today().year + 3  # Adiciona 3 anos para previsões futuras
+        
+        br_holidays = holidays.Brazil(years=range(start_year, end_year + 1))
+        holidays_df = pd.DataFrame(list(br_holidays.items()), columns=['ds', 'holiday'])
+        holidays_df['ds'] = pd.to_datetime(holidays_df['ds'])
+
+        # --- MELHORIA: Sazonalidade Multiplicativa e Feriados ---
+        self.model = Prophet(
+            holidays=holidays_df,
+            seasonality_mode='multiplicative',
+            daily_seasonality=True # Essencial para dados horários
+        )
+        
         self.model.fit(df)
 
     def predict(self, series: pd.Series, n_predict: int) -> pd.Series:

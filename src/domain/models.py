@@ -6,15 +6,15 @@ class ForecastInputData(BaseModel):
     DIA: str
     HORA: str
     DIA_DA_SEMANA: str
-    Rascunho: int
-    Aguardando_Pagamento: int
-    A_Transmitir: int
-    Em_Processamento: int
-    Autorizada: int
-    Denegada: int
-    Cancelada: int
-    Rejeitada: int
-    Erro_Schema: int
+    RASCUNHO: int
+    AGUARDANDO_PAGAMENTO: int
+    A_TRANSMITIR: int
+    EM_PROCESSAMENTO: int
+    AUTORIZADA: int
+    DENEGADA: int
+    CANCELADA: int
+    REJEITADA: int
+    ERRO_SCHEMA: int
 
 class TrainRequest(BaseModel):
     series_data: List[ForecastInputData] = Field(..., description="Dados históricos para treino no formato de colunas.")
