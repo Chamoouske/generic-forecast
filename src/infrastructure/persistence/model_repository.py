@@ -3,6 +3,7 @@
 import joblib
 import os
 import json
+import logging
 from datetime import datetime
 from typing import Any
 
@@ -50,6 +51,8 @@ def save_model(model: Any, app_id: str, metrics: dict) -> tuple[str, str]:
     file_name = f"{app_id}_model_{version}.joblib"
     file_path = os.path.join(MODELS_DIR, file_name)
 
+    update_production_model_info(app_id, version, file_path, metrics)
+
     joblib.dump(model, file_path)
     return version, file_path
 
@@ -85,25 +88,31 @@ def load_production_model_info(app_id: str) -> dict | None:
             production_info = json.load(f)
             return production_info.get(app_id)
     except json.JSONDecodeError:
-        print(f"Erro ao decodificar JSON em {PRODUCTION_MODEL_INFO_PATH}. O arquivo pode estar corrompido.")
+        logging.info(f"Erro ao decodificar JSON em {PRODUCTION_MODEL_INFO_PATH}. O arquivo pode estar corrompido.")
         return None
     except Exception as e:
-        print(f"Erro ao carregar informações do modelo de produção: {e}")
+        logging.info(f"Erro ao carregar informações do modelo de produção: {e}")
         return None
 
 def update_production_model_info(app_id: str, version: str, path: str, metrics: dict):
     """
     Atualiza as informações do modelo em produção no arquivo JSON.
     """
+    logging.info(f"DEBUG: update_production_model_info started for app_id: {app_id}")
     os.makedirs(MODELS_DIR, exist_ok=True)
     production_info = {}
     if os.path.exists(PRODUCTION_MODEL_INFO_PATH):
+        logging.info(f"DEBUG: {PRODUCTION_MODEL_INFO_PATH} exists. Attempting to read.")
         try:
             with open(PRODUCTION_MODEL_INFO_PATH, 'r') as f:
                 production_info = json.load(f)
+            logging.info(f"DEBUG: Successfully read {PRODUCTION_MODEL_INFO_PATH}.")
         except json.JSONDecodeError:
-            print(f"Aviso: {PRODUCTION_MODEL_INFO_PATH} está corrompido ou vazio. Criando um novo.")
+            logging.info(f"DEBUG: Warning: {PRODUCTION_MODEL_INFO_PATH} is corrupted or empty. Creating a new one.")
             production_info = {} # Reset if corrupted
+        except Exception as e:
+            logging.info(f"DEBUG: Error reading {PRODUCTION_MODEL_INFO_PATH}: {e}")
+            production_info = {} # Reset on any read error
 
     production_info[app_id] = {
         "version": version,
@@ -112,15 +121,20 @@ def update_production_model_info(app_id: str, version: str, path: str, metrics: 
         "timestamp_promoted": datetime.now().isoformat()
     }
 
-    with open(PRODUCTION_MODEL_INFO_PATH, 'w') as f:
-        json.dump(production_info, f, indent=4)
+    logging.info(f"DEBUG: Attempting to write to {PRODUCTION_MODEL_INFO_PATH}.")
+    try:
+        with open(PRODUCTION_MODEL_INFO_PATH, 'w') as f:
+            json.dump(production_info, f, indent=4)
+        logging.info(f"DEBUG: Successfully wrote to {PRODUCTION_MODEL_INFO_PATH}.")
+    except Exception as e:
+        logging.info(f"DEBUG: Error writing to {PRODUCTION_MODEL_INFO_PATH}: {e}")
 
 if __name__ == "__main__":
     # Exemplo de uso (requer um objeto ProphetModel para testar)
     from src.infrastructure.forecasting_models.prophet_model import ProphetModel
     import pandas as pd
 
-    print("Testando model_repository.py:")
+    logging.info("Testando model_repository.py:")
 
     # Criar um modelo dummy para salvar
     dummy_model = ProphetModel()
@@ -136,21 +150,21 @@ if __name__ == "__main__":
     test_version = "v1"
 
     # Salvar o modelo
-    print(f"Salvando modelo para {test_app_id}...")
+    logging.info(f"Salvando modelo para {test_app_id}...")
     saved_path = save_model(dummy_model, test_app_id, test_version)
-    print(f"Modelo salvo em: {saved_path}")
+    logging.info(f"Modelo salvo em: {saved_path}")
 
     # Carregar o modelo
-    print(f"Carregando modelo para {test_app_id}...")
+    logging.info(f"Carregando modelo para {test_app_id}...")
     loaded_model = load_model(test_app_id, test_version)
-    print(f"Modelo carregado: {loaded_model}")
+    logging.info(f"Modelo carregado: {loaded_model}")
 
     # Verificar se é o mesmo tipo de objeto
-    print(f"Tipo do modelo carregado: {type(loaded_model)}")
+    logging.info(f"Tipo do modelo carregado: {type(loaded_model)}")
     assert isinstance(loaded_model, ProphetModel)
 
     # Testar FileNotFoundError
     try:
         load_model("non_existent_app")
     except FileNotFoundError as e:
-        print(f"\nErro esperado ao carregar modelo inexistente: {e}")
+        logging.info(f"\nErro esperado ao carregar modelo inexistente: {e}")

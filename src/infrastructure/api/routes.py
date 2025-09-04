@@ -1,65 +1,43 @@
 # src/infrastructure/api/routes.py
 
-from fastapi import APIRouter, HTTPException, status, Query, File, UploadFile, BackgroundTasks
-from src.domain.models import TrainRequest, PredictRequest, PredictResponse, ForecastInputData
-from src.use_cases.train_model_use_case import TrainModelUseCase
-from src.use_cases.predict_forecast_use_case import PredictForecastUseCase
+from fastapi import APIRouter, HTTPException, status, File, UploadFile, BackgroundTasks
+from src.domain.models import TrainRequest, ForecastInputData
+from src.use_cases.train_anomaly_model_use_case import TrainAnomalyModelUseCase
+from src.use_cases.detect_anomalies_use_case import DetectAnomaliesUseCase
 import pandas as pd
 from io import StringIO
 import logging
 from typing import List
 
-# Configuração básica de logging para imprimir os resultados do treino
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 router = APIRouter()
 
-def run_training_in_background(app_id: str, series_data: List[ForecastInputData], target_column: str):
-    """Função que executa o caso de uso de treinamento e loga o resultado."""
+def run_anomaly_training_in_background(app_id: str, series_data: List[ForecastInputData]):
+    """Function that runs the anomaly detection training use case and logs the result."""
     try:
-        logging.info(f"[BACKGROUND-TRAIN] Iniciando treinamento para app_id: {app_id}, target: {target_column}")
-        use_case = TrainModelUseCase()
+        logging.info(f"[BACKGROUND-TRAIN] Starting anomaly model training for app_id: {app_id}")
+        use_case = TrainAnomalyModelUseCase()
         response = use_case.execute(
             app_id=app_id,
-            series_data=series_data,
-            target_column=target_column
+            series_data=series_data
         )
-        logging.info(f"[BACKGROUND-TRAIN] Treinamento concluído para app_id: {app_id}, target: {target_column}. Resultado: {response.message}")
+        logging.info(f"[BACKGROUND-TRAIN] Anomaly model training completed for app_id: {app_id}. Result: {response.message}")
     except Exception as e:
-        logging.error(f"[BACKGROUND-TRAIN] Erro durante treinamento para app_id: {app_id}, target: {target_column}. Erro: {e}", exc_info=True)
+        logging.error(f"[BACKGROUND-TRAIN] Error during anomaly model training for app_id: {app_id}. Error: {e}", exc_info=True)
 
-@router.post("/train/{app_id}", status_code=status.HTTP_202_ACCEPTED)
-async def train_model(
-    app_id: str, 
-    request: TrainRequest,
-    background_tasks: BackgroundTasks,
-    target_column: str = Query(..., description="A coluna alvo para o treinamento do modelo (ex: 'Autorizada').")
-):
-    """
-    Inicia o treinamento de um modelo em segundo plano a partir de um corpo JSON.
-    A resposta é imediata e o resultado do treino é logado na aplicação.
-    """
-    background_tasks.add_task(
-        run_training_in_background, 
-        app_id=app_id, 
-        series_data=request.series_data, 
-        target_column=target_column
-    )
-    return {"message": f"Processo de treinamento para '{app_id}_{target_column}' iniciado em segundo plano."}
-
-@router.post("/train-csv/{app_id}", status_code=status.HTTP_202_ACCEPTED)
-async def train_model_from_csv(
+@router.post("/train-anomaly-model-csv/{app_id}", status_code=status.HTTP_202_ACCEPTED)
+async def train_anomaly_model_from_csv(
     app_id: str,
     background_tasks: BackgroundTasks,
-    target_column: str = Query(..., description="A coluna alvo para o treinamento (ex: 'Autorizada')."),
-    file: UploadFile = File(..., description="Arquivo .csv com os dados históricos para treino. Separador deve ser ';'.")
+    file: UploadFile = File(..., description=".csv file with historical data for training. Separator must be ';'.")
 ):
     """
-    Inicia o treinamento de um modelo em segundo plano a partir de um arquivo CSV.
-    A resposta é imediata e o resultado do treino é logado na aplicação.
+    Starts training an anomaly detection model in the background from a CSV file.
+    The response is immediate, and the training result is logged.
     """
     if not file.filename.endswith('.csv'):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="O arquivo deve ser um .csv")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="The file must be a .csv")
 
     try:
         content = await file.read()
@@ -68,35 +46,44 @@ async def train_model_from_csv(
         series_data = [ForecastInputData(**row) for row in df.to_dict(orient='records')]
 
         background_tasks.add_task(
-            run_training_in_background, 
-            app_id=app_id, 
-            series_data=series_data, 
-            target_column=target_column
+            run_anomaly_training_in_background,
+            app_id=app_id,
+            series_data=series_data
         )
-        return {"message": f"Processo de treinamento para '{app_id}_{target_column}' a partir do arquivo '{file.filename}' iniciado em segundo plano."}
+        return {"message": f"Anomaly detection model training process for '{app_id}' from file '{file.filename}' started in the background."}
     except Exception as e:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Erro ao processar o arquivo CSV antes de iniciar o treinamento: {e}")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
-
-@router.post("/predict/{app_id}", response_model=PredictResponse, status_code=status.HTTP_200_OK)
-async def predict_forecast(
-    app_id: str, 
-    request: PredictRequest,
-    target_column: str = Query(..., description="A coluna alvo para a previsão (ex: 'Autorizada').")
+@router.post("/detect-anomalies-csv/{app_id}", status_code=status.HTTP_200_OK)
+async def detect_anomalies_from_csv(
+    app_id: str,
+    file: UploadFile = File(..., description=".csv file with data to check for anomalies. Separator must be ';'.")
 ):
     """
-    Realiza a previsão para uma aplicação e métrica específicas.
+    Detects anomalies in data provided via a CSV file.
     """
+    if not file.filename.endswith('.csv'):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="The file must be a .csv")
+
     try:
-        use_case = PredictForecastUseCase()
-        response = use_case.execute(
+        content = await file.read()
+        content_str = content.decode('utf-8')
+        df = pd.read_csv(StringIO(content_str), sep=';', dtype=str)
+        series_data = [ForecastInputData(**row) for row in df.to_dict(orient='records')]
+
+        use_case = DetectAnomaliesUseCase()
+        result_df = use_case.execute(
             app_id=app_id,
-            series_data=request.series_data,
-            n_predict_steps=request.n_predict_steps,
-            target_column=target_column
+            series_data=series_data
         )
-        return response
+        
+        anomalies = result_df[result_df['anomaly'] == -1]
+        
+        return {
+            "message": f"Anomaly detection complete. Found {len(anomalies)} potential anomalies.",
+            "anomalies": anomalies.to_dict(orient='records')
+        }
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     except Exception as e:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Erro interno do servidor: {e}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Internal server error: {e}")
